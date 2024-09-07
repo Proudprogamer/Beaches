@@ -6,6 +6,7 @@ import { Sun, Camera, Edit3, MapPin, ChevronLeft, ChevronRight } from 'lucide-re
 import "slick-carousel/slick/slick.css";
 import "slick-carousel/slick/slick-theme.css";
 import { supabase } from '../../supabaseClient';  // Ensure this is correctly imported
+import { getAuth, onAuthStateChanged, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';  // Firebase imports
 
 Modal.setAppElement('#root');
 
@@ -13,10 +14,23 @@ const CarouselWithDetails = ({ name, beachLocation, beachId }) => {
     const [rating, setRating] = useState(0);
     const [reviewModalIsOpen, setReviewModalIsOpen] = useState(false);
     const [photoModalIsOpen, setPhotoModalIsOpen] = useState(false);
+    const [loginModalIsOpen, setLoginModalIsOpen] = useState(false); // State for login modal
     const [carouselImages, setCarouselImages] = useState([]);
     const [newReview, setNewReview] = useState("");
     const [newImage, setNewImage] = useState(null);
     const [isUploading, setIsUploading] = useState(false);
+    const [user, setUser] = useState(null); // State to hold authenticated user info
+
+    // Firebase authentication setup
+    const auth = getAuth();
+    
+    useEffect(() => {
+        // Listen for auth state changes
+        const unsubscribe = onAuthStateChanged(auth, (user) => {
+            setUser(user);
+        });
+        return () => unsubscribe();
+    }, [auth]);
 
     // Function to fetch images for the specific beach ID
     const fetchImages = async () => {
@@ -44,23 +58,26 @@ const CarouselWithDetails = ({ name, beachLocation, beachId }) => {
     };
 
     const handleReviewSubmit = async () => {
+        if (!user) {
+            setLoginModalIsOpen(true); // Open the login modal if the user is not logged in
+            return;
+        }
+
         try {
-            // Assuming you have a way to get the numeric rating value
             const numericRating = parseFloat(rating).toFixed(1);
-    
-            // Insert the review into the database
             const { error } = await supabase
                 .from('reviews')
                 .insert([
                     {
                         rating: numericRating,
                         content: newReview,
-                        beach_id: beachId
+                        beach_id: beachId,
+                        user_id: user.uid // Include user_id from Firebase
                     }
                 ]);
-    
+
             if (error) throw error;
-    
+
             console.log("Review Submitted:", newReview);
             setReviewModalIsOpen(false);
             setNewReview("");
@@ -68,7 +85,6 @@ const CarouselWithDetails = ({ name, beachLocation, beachId }) => {
             console.error("Error submitting review:", err.message);
         }
     };
-    
 
     const handlePhotoChange = (e) => {
         const file = e.target.files[0];
@@ -83,15 +99,12 @@ const CarouselWithDetails = ({ name, beachLocation, beachId }) => {
         try {
             setIsUploading(true);
     
-            // Sanitize the file name to remove spaces and special characters
             const sanitizedFileName = newImage.name
-                .replace(/\s+/g, '-')          // Replace spaces with hyphens
-                .replace(/[^a-zA-Z0-9.-]/g, ''); // Remove any characters that are not alphanumeric, dot, or hyphen
+                .replace(/\s+/g, '-')
+                .replace(/[^a-zA-Z0-9.-]/g, '');
     
-            // Encode the sanitized file name
             const encodedFileName = encodeURIComponent(sanitizedFileName);
     
-            // Upload the image to Supabase
             const { data, error } = await supabase.storage
                 .from('beach-images')
                 .upload(`photos/${encodedFileName}`, newImage, {
@@ -101,7 +114,6 @@ const CarouselWithDetails = ({ name, beachLocation, beachId }) => {
     
             if (error) throw error;
     
-            // Get the public URL of the uploaded image
             const { data: { publicUrl }, error: urlError } = supabase
                 .storage
                 .from('beach-images')
@@ -109,7 +121,6 @@ const CarouselWithDetails = ({ name, beachLocation, beachId }) => {
     
             if (urlError) throw urlError;
     
-            // Insert the image URL and beach ID into the photos table
             const { error: insertError } = await supabase
                 .from('photos')
                 .insert([
@@ -118,7 +129,6 @@ const CarouselWithDetails = ({ name, beachLocation, beachId }) => {
     
             if (insertError) throw insertError;
     
-            // Refresh images after upload
             fetchImages();
             setPhotoModalIsOpen(false);
             setNewImage(null);
@@ -129,7 +139,17 @@ const CarouselWithDetails = ({ name, beachLocation, beachId }) => {
             setIsUploading(false);
         }
     };
-    
+
+    // Function to handle user login using Firebase
+    const handleLogin = async () => {
+        const provider = new GoogleAuthProvider();
+        try {
+            await signInWithPopup(auth, provider);
+            setLoginModalIsOpen(false); // Close login modal on success
+        } catch (error) {
+            console.error("Error during login:", error.message);
+        }
+    };
 
     const PrevArrow = (props) => {
         const { onClick } = props;
@@ -204,86 +224,47 @@ const CarouselWithDetails = ({ name, beachLocation, beachId }) => {
                     </h1>
                     <div className="flex items-center space-x-2 text-sm md:text-xl">
                         <MapPin className="text-red-400" size={16} />
-                        <h2 className="font-semibold text-gray-800 drop-shadow-[0_2px_4px_rgba(100,100,100,0.6)]">
-                            {beachLocation}
-                        </h2>
+                        <h2 className="font-semibold text-gray-800 drop-shadow-[0_2px_4px_rgba(100,100,100,0.4)]">{beachLocation}</h2>
                     </div>
                 </div>
             </div>
-
-            <div className="flex flex-col items-center mb-6 md:mb-12">
-                <div className="flex items-center space-x-4 mb-4">
-                    <Sun className="text-yellow-400" size={36} />
-                    <Rating
-                        count={5}
-                        onChange={handleRating}
-                        size={36}
-                        activeColor="#ffd700"
-                        value={rating}
-                        isHalf={true}
-                    />
-                    <div className="text-2xl md:text-3xl font-bold text-white text-shadow-sm">
-                        {rating.toFixed(1)} / 5
-                    </div>
-                </div>
-                <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4">
-                    <button
-                        className="flex items-center justify-center bg-gradient-to-r from-purple-500 to-indigo-600 text-white px-6 py-3 rounded-full hover:from-purple-600 hover:to-indigo-700 transform hover:scale-105 transition-all duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-opacity-50"
-                        onClick={() => setReviewModalIsOpen(true)}
-                    >
-                        <Edit3 className="mr-2" size={20} />
-                        Leave a Review
-                    </button>
-                    <button
-                        className="flex items-center justify-center bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-6 py-3 rounded-full hover:from-blue-600 hover:to-indigo-700 transform hover:scale-105 transition-all duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
-                        onClick={() => setPhotoModalIsOpen(true)}
-                    >
-                        <Camera className="mr-2" size={20} />
-                        Upload Photo
-                    </button>
-                </div>
-            </div>
-
-            <Modal
-                isOpen={reviewModalIsOpen}
-                onRequestClose={() => setReviewModalIsOpen(false)}
-                style={modalStyles}
-                contentLabel="Leave a Review"
-            >
-                <h2 className="text-2xl md:text-3xl font-bold mb-4">Leave a Review</h2>
-                <textarea
-                    className="w-full h-32 border rounded-lg p-2 mb-4"
-                    placeholder="Write your review..."
-                    value={newReview}
-                    onChange={(e) => setNewReview(e.target.value)}
-                />
-                <button
-                    className="bg-blue-500 text-white px-6 py-2 rounded-full hover:bg-blue-600 transition-all duration-300 ease-in-out"
-                    onClick={handleReviewSubmit}
-                >
-                    Submit
+            <div className="flex flex-col items-center space-y-4">
+                <button className="flex items-center justify-center w-full md:w-auto px-4 py-2 bg-amber-500 text-white font-bold rounded-lg shadow-lg hover:bg-amber-600 transition-all duration-300" onClick={() => setReviewModalIsOpen(true)}>
+                    <Edit3 className="mr-2" /> Review
                 </button>
+                <button className="flex items-center justify-center w-full md:w-auto px-4 py-2 bg-blue-500 text-white font-bold rounded-lg shadow-lg hover:bg-blue-600 transition-all duration-300" onClick={() => setPhotoModalIsOpen(true)}>
+                    <Camera className="mr-2" /> Post Photo
+                </button>
+            </div>
+
+            {/* Review Modal */}
+            <Modal isOpen={reviewModalIsOpen} onRequestClose={() => setReviewModalIsOpen(false)} style={modalStyles}>
+                <h2 className="text-2xl font-semibold mb-4">Write a Review</h2>
+                <Rating count={5} size={40} value={rating} onChange={handleRating} />
+                <textarea className="w-full p-2 border-2 border-gray-300 rounded-md mt-2" value={newReview} onChange={(e) => setNewReview(e.target.value)} placeholder="Your review" rows={4}></textarea>
+                <div className="flex justify-end mt-4">
+                    <button className="px-4 py-2 bg-blue-500 text-white rounded-lg" onClick={handleReviewSubmit}>Submit Review</button>
+                </div>
             </Modal>
 
-            <Modal
-                isOpen={photoModalIsOpen}
-                onRequestClose={() => setPhotoModalIsOpen(false)}
-                style={modalStyles}
-                contentLabel="Upload Photo"
-            >
-                <h2 className="text-2xl md:text-3xl font-bold mb-4">Upload Photo</h2>
-                <input
-                    type="file"
-                    onChange={handlePhotoChange}
-                    accept="image/*"
-                />
-                <button
-                    className="bg-blue-500 text-white px-6 py-2 rounded-full hover:bg-blue-600 transition-all duration-300 ease-in-out mt-4"
-                    onClick={handlePhotoUpload}
-                    disabled={isUploading}
-                >
-                    {isUploading ? 'Uploading...' : 'Upload'}
-                </button>
+            {/* Photo Modal */}
+            <Modal isOpen={photoModalIsOpen} onRequestClose={() => setPhotoModalIsOpen(false)} style={modalStyles}>
+                <h2 className="text-2xl font-semibold mb-4">Post a Photo</h2>
+                <input type="file" accept="image/*" onChange={handlePhotoChange} />
+                <div className="flex justify-end mt-4">
+                    <button className="px-4 py-2 bg-green-500 text-white rounded-lg" onClick={handlePhotoUpload} disabled={isUploading}>
+                        {isUploading ? 'Uploading...' : 'Upload Photo'}
+                    </button>
+                </div>
+            </Modal>
+
+            {/* Login Modal */}
+            <Modal isOpen={loginModalIsOpen} onRequestClose={() => setLoginModalIsOpen(false)} style={modalStyles}>
+                <h2 className="text-2xl font-semibold mb-4">Login Required</h2>
+                <p>Please log in to submit a review.</p>
+                <div className="flex justify-end mt-4">
+                    <button className="px-4 py-2 bg-blue-500 text-white rounded-lg" onClick={handleLogin}>Login with Google</button>
+                </div>
             </Modal>
         </div>
     );
