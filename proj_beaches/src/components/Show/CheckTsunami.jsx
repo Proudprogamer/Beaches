@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { AlertCircle, ShieldCheck, Info, Shield } from 'lucide-react';
 
 function haversineDistance(lat1, lon1, lat2, lon2) {
-    const R = 6371; // Radius of the Earth in km
+    const R = 6371; 
     const dLat = (lat2 - lat1) * (Math.PI / 180);
     const dLon = (lon2 - lon1) * (Math.PI / 180);
     const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
@@ -25,7 +25,7 @@ const CheckTsunami = ({ lat, lon }) => {
                 const response = await axios.get('https://thingproxy.freeboard.io/fetch/https://tsunami.incois.gov.in/itews/DSSProducts/OPR/past90days.json');
                 const data = response.data;
                 const tsunamis = data.datasets || [];
-                const sevenDaysInMillis = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
+                const sevenDaysInMillis = 7 * 24 * 60 * 60 * 1000; 
                 const currentTime = Date.now();
                 let minDistance = Infinity;
 
